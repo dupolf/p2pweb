@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Self-Deleting Chat Rooms</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        }
+
+        body {
+            background: #0a0a0a;
+            color: #e0e0e0;
+            line-height: 1.6;
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: #1a1a1a;
+            border-radius: 8px;
+            overflow: hidden;
+            height: 85vh;
+        }
+
+        header {
+            background: #121212;
+            padding: 20px;
+            text-align: center;
+            border-bottom: 1px solid #2a2a2a;
+        }
+
+        h1 {
+            font-weight: 400;
+            font-size: 22px;
+            color: #e0e0e0;
+        }
+
+        .main-content {
+            display: flex;
+            height: calc(100% - 73px);
+        }
+
+        .rooms-sidebar {
+            width: 250px;
+            background: #151515;
+            border-right: 1px solid #2a2a2a;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .rooms-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .rooms-title {
+            font-size: 16px;
+            font-weight: 500;
+            color: #e0e0e0;
+        }
+
+        .create-room-btn {
+            background: #2a2a2a;
+            color: #e0e0e0;
+            border: none;
+            padding: 6px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+
+        .create-room-btn:hover {
+            background: #333;
+        }
+
+        .rooms-list {
+            flex: 1;
+            overflow-y: auto;
+        }
+
+        .room-item {
+            padding: 12px;
+            border-bottom: 1px solid #252525;
+            cursor: pointer;
+            transition: background 0.2s;
+            position: relative;
+        }
+
+        .room-item:hover {
+            background: #1e1e1e;
+        }
+
+        .room-item.active {
+            background: #252525;
+        }
+
+        .room-name {
+            font-weight: 500;
+            margin-bottom: 4px;
+            color: #e0e0e0;
+            padding-right: 20px;
+        }
+
+        .room-host {
+            font-size: 11px;
+            color: #7a7a7a;
+            margin-bottom: 4px;
+        }
+
+        .room-info {
+            display: flex;
+            justify-content: space-between;
+            color: #7a7a7a;
+            font-size: 12px;
+        }
+
+        .host-indicator {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #4a4a4a;
+        }
+
+        .host-indicator.is-host {
+            background: #3a7af2;
+        }
+
+        .chat-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .chat-header {
+            padding: 15px 20px;
+            border-bottom: 1px solid #2a2a2a;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #1a1a1a;
+        }
+
+        .room-title {
+            font-size: 15px;
+            font-weight: 500;
+            color: #e0e0e0;
+        }
+
+        .user-count {
+            color: #7a7a7a;
+            font-size: 13px;
+        }
+
+        .messages-container {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            background: #151515;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .message {
+            margin-bottom: 15px;
+            max-width: 80%;
+        }
+
+        .message.own {
+            margin-left: auto;
+        }
+
+        .message-content {
+            padding: 10px 15px;
+            border-radius: 6px;
+            background: #2a2a2a;
+            display: inline-block;
+        }
+
+        .message.own .message-content {
+            background: #3a7af2;
+            color: white;
+        }
+
+        .message-sender {
+            font-size: 12px;
+            color: #7a7a7a;
+            margin-bottom: 4px;
+        }
+
+        .message.own .message-sender {
+            text-align: right;
+        }
+
+        .message-time {
+            font-size: 11px;
+            color: #5a5a5a;
+            margin-top: 4px;
+        }
+
+        .message.own .message-time {
+            text-align: right;
+        }
+
+        .no-messages {
+            color: #5a5a5a;
+            text-align: center;
+            margin-top: 40px;
+            font-size: 14px;
+        }
+
+        .input-container {
+            padding: 15px 20px;
+            border-top: 1px solid #2a2a2a;
+            display: flex;
+            gap: 10px;
+            background: #1a1a1a;
+        }
+
+        .message-input {
+            flex: 1;
+            padding: 12px 15px;
+            border: 1px solid #2a2a2a;
+            border-radius: 4px;
+            outline: none;
+            font-size: 14px;
+            background: #151515;
+            color: #e0e0e0;
+        }
+
+        .message-input:focus {
+            border-color: #3a3a3a;
+        }
+
+        .send-button {
+            background: #2a2a2a;
+            color: #e0e0e0;
+            border: none;
+            padding: 0 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .send-button:hover {
+            background: #333;
+        }
+
+        .no-room-selected {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            flex: 1;
+            color: #5a5a5a;
+            text-align: center;
+            padding: 40px;
+        }
+
+        .no-room-icon {
+            font-size: 40px;
+            margin-bottom: 15px;
+            opacity: 0.3;
+        }
+
+        .room-form {
+            background: #1a1a1a;
+            padding: 20px;
+            border-radius: 6px;
+            border: 1px solid #2a2a2a;
+            width: 300px;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 10;
+        }
+
+        .form-title {
+            text-align: center;
+            margin-bottom: 20px;
+            font-weight: 500;
+            color: #e0e0e0;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 12px;
+            margin-bottom: 15px;
+            border: 1px solid #2a2a2a;
+            border-radius: 4px;
+            font-size: 14px;
+            background: #151515;
+            color: #e0e0e0;
+        }
+
+        .form-buttons {
+            display: flex;
+            gap: 10px;
+        }
+
+        .form-button {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .form-button.primary {
+            background: #2a2a2a;
+            color: #e0e0e0;
+        }
+
+        .form-button.secondary {
+            background: #151515;
+            color: #e0e0e0;
+            border: 1px solid #2a2a2a;
+        }
+
+        .overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 5;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        /* Scrollbar styling */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #1a1a1a;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #2a2a2a;
+            border-radius: 3px;
+        }
+
+        /* Responsive styles */
+        @media (max-width: 768px) {
+            .main-content {
+                flex-direction: column;
+            }
+            
+            .rooms-sidebar {
+                width: 100%;
+                border-right: none;
+                border-bottom: 1px solid #2a2a2a;
+                max-height: 200px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Self-Deleting Chat Rooms</h1>
+        </header>
+        
+        <div class="main-content">
+            <div class="rooms-sidebar">
+                <div class="rooms-header">
+                    <div class="rooms-title">Chat Rooms</div>
+                    <button class="create-room-btn" id="createRoomBtn">+ New Room</button>
+                </div>
+                
+                <div class="rooms-list" id="roomsList">
+                    <!-- Room items will be added here dynamically -->
+                </div>
+            </div>
+            
+            <div class="chat-container">
+                <div class="chat-header">
+                    <div class="room-title">Select a room to start chatting</div>
+                    <div class="user-count">0 users</div>
+                </div>
+                
+                <div class="messages-container" id="messagesContainer">
+                    <div class="no-messages">No messages yet. Start a conversation.</div>
+                </div>
+                
+                <div class="input-container">
+                    <input type="text" class="message-input" placeholder="Type your message..." disabled>
+                    <button class="send-button" disabled>Send</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="overlay hidden" id="overlay"></div>
+    
+    <div class="room-form hidden" id="roomForm">
+        <div class="form-title">Create New Room</div>
+        <input type="text" class="form-input" placeholder="Room name" id="roomNameInput">
+        <div class="form-buttons">
+            <button class="form-button secondary" id="cancelCreateRoom">Cancel</button>
+            <button class="form-button primary" id="confirmCreateRoom">Create</button>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // DOM elements
+            const roomsList = document.getElementById('roomsList');
+            const createRoomBtn = document.getElementById('createRoomBtn');
+            const roomForm = document.getElementById('roomForm');
+            const overlay = document.getElementById('overlay');
+            const cancelCreateRoom = document.getElementById('cancelCreateRoom');
+            const confirmCreateRoom = document.getElementById('confirmCreateRoom');
+            const roomNameInput = document.getElementById('roomNameInput');
+            const messagesContainer = document.getElementById('messagesContainer');
+            const roomTitle = document.querySelector('.room-title');
+            const userCount = document.querySelector('.user-count');
+            const messageInput = document.querySelector('.message-input');
+            const sendButton = document.querySelector('.send-button');
+            
+            // State
+            let rooms = [];
+            let currentRoomId = null;
+            let messages = {};
+            let isHost = false;
+            let userId = generateUserId();
+            
+            // Initialize with empty rooms list
+            updateRoomsList();
+            
+            // Create room button handler
+            createRoomBtn.addEventListener('click', () => {
+                roomForm.classList.remove('hidden');
+                overlay.classList.remove('hidden');
+                roomNameInput.value = '';
+                roomNameInput.focus();
+            });
+            
+            // Cancel create room
+            cancelCreateRoom.addEventListener('click', () => {
+                roomForm.classList.add('hidden');
+                overlay.classList.add('hidden');
+            });
+            
+            // Confirm create room
+            confirmCreateRoom.addEventListener('click', () => {
+                const roomName = roomNameInput.value.trim();
+                if (roomName) {
+                    createRoom(roomName);
+                    roomForm.classList.add('hidden');
+                    overlay.classList.add('hidden');
+                }
+            });
+            
+            // Generate a unique user ID
+            function generateUserId() {
+                return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+            }
+            
+            // Create a new room
+            function createRoom(name) {
+                const newRoom = {
+                    id: Date.now(), // Simple ID generation
+                    name: name,
+                    users: [userId],
+                    host: userId,
+                    active: true,
+                    createdAt: new Date()
+                };
+                
+                rooms.push(newRoom);
+                messages[newRoom.id] = [];
+                updateRoomsList();
+                selectRoom(newRoom.id);
+                isHost = true;
+                
+                // Add system message
+                addMessage(newRoom.id, {
+                    type: 'system',
+                    content: 'You created this room. When you leave, the room will be deleted.',
+                    sender: 'System',
+                    timestamp: new Date()
+                });
+            }
+            
+            // Join an existing room
+            function joinRoom(roomId) {
+                const room = rooms.find(r => r.id === roomId);
+                if (room) {
+                    // Add user to room if not already there
+                    if (!room.users.includes(userId)) {
+                        room.users.push(userId);
+                    }
+                    
+                    currentRoomId = roomId;
+                    isHost = (room.host === userId);
+                    
+                    roomTitle.textContent = room.name;
+                    userCount.textContent = `${room.users.length} user${room.users.length !== 1 ? 's' : ''}`;
+                    
+                    // Enable message input
+                    messageInput.disabled = false;
+                    sendButton.disabled = false;
+                    
+                    // Load messages
+                    loadMessages(roomId);
+                    
+                    // Update rooms list to reflect active room
+                    updateRoomsList();
+                    
+                    // Add join message
+                    addMessage(roomId, {
+                        type: 'system',
+                        content: `User joined the room. ${room.users.length} users online.`,
+                        sender: 'System',
+                        timestamp: new Date()
+                    });
+                }
+            }
+            
+            // Leave current room
+            function leaveRoom() {
+                if (currentRoomId) {
+                    const room = rooms.find(r => r.id === currentRoomId);
+                    if (room) {
+                        // Remove user from room
+                        room.users = room.users.filter(u => u !== userId);
+                        
+                        // Add leave message
+                        addMessage(currentRoomId, {
+                            type: 'system',
+                            content: `User left the room. ${room.users.length} users online.`,
+                            sender: 'System',
+                            timestamp: new Date()
+                        });
+                        
+                        // If host leaves, delete the room
+                        if (isHost) {
+                            deleteRoom(currentRoomId);
+                            
+                            // Add system message in UI
+                            messagesContainer.innerHTML = '<div class="no-messages">Room deleted by host</div>';
+                        }
+                    }
+                    
+                    // Reset UI
+                    currentRoomId = null;
+                    isHost = false;
+                    roomTitle.textContent = 'Select a room to start chatting';
+                    userCount.textContent = '0 users';
+                    messageInput.disabled = true;
+                    sendButton.disabled = true;
+                    messagesContainer.innerHTML = '<div class="no-messages">No messages yet. Start a conversation.</div>';
+                    
+                    // Update rooms list
+                    updateRoomsList();
+                }
+            }
+            
+            // Delete a room
+            function deleteRoom(roomId) {
+                // Remove room from list
+                rooms = rooms.filter(r => r.id !== roomId);
+                
+                // Remove messages
+                delete messages[roomId];
+                
+                // Update UI
+                updateRoomsList();
+            }
+            
+            // Update rooms list UI
+            function updateRoomsList() {
+                roomsList.innerHTML = '';
+                
+                if (rooms.length === 0) {
+                    roomsList.innerHTML = '<div style="color: #5a5a5a; text-align: center; padding: 20px;">No rooms available</div>';
+                    return;
+                }
+                
+                rooms.forEach(room => {
+                    const roomItem = document.createElement('div');
+                    roomItem.className = 'room-item';
+                    roomItem.dataset.id = room.id;
+                    
+                    if (room.id === currentRoomId) {
+                        roomItem.classList.add('active');
+                    }
+                    
+                    const isUserHost = room.host === userId;
+                    
+                    roomItem.innerHTML = `
+                        <div class="room-name">${room.name}</div>
+                        <div class="room-host">Host: ${isUserHost ? 'You' : 'Other user'}</div>
+                        <div class="room-info">
+                            <span>${room.users.length} user${room.users.length !== 1 ? 's' : ''}</span>
+                            <span>${formatTime(room.createdAt)}</span>
+                        </div>
+                        <div class="host-indicator ${isUserHost ? 'is-host' : ''}"></div>
+                    `;
+                    
+                    roomItem.addEventListener('click', () => {
+                        joinRoom(room.id);
+                    });
+                    
+                    roomsList.appendChild(roomItem);
+                });
+            }
+            
+            // Format time for display
+            function formatTime(date) {
+                return new Date(date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            }
+            
+            // Select a room
+            function selectRoom(roomId) {
+                joinRoom(roomId);
+            }
+            
+            // Load messages for a room
+            function loadMessages(roomId) {
+                messagesContainer.innerHTML = '';
+                
+                if (!messages[roomId] || messages[roomId].length === 0) {
+                    messagesContainer.innerHTML = '<div class="no-messages">No messages yet. Start a conversation.</div>';
+                    return;
+                }
+                
+                messages[roomId].forEach(msg => {
+                    const messageEl = document.createElement('div');
+                    messageEl.className = `message ${msg.sender === 'You' ? 'own' : ''}`;
+                    
+                    if (msg.type === 'system') {
+                        messageEl.innerHTML = `
+                            <div class="message-content" style="background: #252525; color: #7a7a7a; margin: 0 auto; text-align: center;">
+                                ${msg.content}
+                            </div>
+                            <div class="message-time" style="text-align: center;">${formatTime(msg.timestamp)}</div>
+                        `;
+                    } else {
+                        messageEl.innerHTML = `
+                            <div class="message-sender">${msg.sender}</div>
+                            <div class="message-content">${msg.content}</div>
+                            <div class="message-time">${formatTime(msg.timestamp)}</div>
+                        `;
+                    }
+                    
+                    messagesContainer.appendChild(messageEl);
+                });
+                
+                // Scroll to bottom
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            }
+            
+            // Add a message to a room
+            function addMessage(roomId, message) {
+                if (!messages[roomId]) {
+                    messages[roomId] = [];
+                }
+                
+                messages[roomId].push(message);
+                
+                if (roomId === currentRoomId) {
+                    loadMessages(roomId);
+                }
+            }
+            
+            // Send message handler
+            sendButton.addEventListener('click', sendMessage);
+            messageInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    sendMessage();
+                }
+            });
+            
+            function sendMessage() {
+                const text = messageInput.value.trim();
+                if (text && currentRoomId) {
+                    // Add message to UI
+                    addMessage(currentRoomId, {
+                        type: 'chat',
+                        content: text,
+                        sender: 'You',
+                        timestamp: new Date()
+                    });
+                    
+                    // Clear input
+                    messageInput.value = '';
+                }
+            }
+            
+            // Close overlay when clicking outside form
+            overlay.addEventListener('click', () => {
+                roomForm.classList.add('hidden');
+                overlay.classList.add('hidden');
+            });
+            
+            // Handle page refresh or tab close
+            window.addEventListener('beforeunload', () => {
+                leaveRoom();
+            });
+        });
+    </script>
+</body>
+</html>
