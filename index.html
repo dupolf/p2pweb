@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Minimal P2P Chat</title>
+    <title>P2P Chat - WebRTC</title>
     <style>
         * {
             margin: 0;
@@ -34,12 +34,35 @@
             padding: 20px;
             text-align: center;
             border-bottom: 1px solid #2a2a2a;
+            position: relative;
         }
 
         h1 {
             font-weight: 400;
             font-size: 22px;
             color: #e0e0e0;
+        }
+
+        .connection-status {
+            position: absolute;
+            right: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #ff4444;
+        }
+
+        .status-dot.connected {
+            background: #44ff44;
         }
 
         .main-content {
@@ -54,6 +77,20 @@
             padding: 20px;
             display: flex;
             flex-direction: column;
+        }
+
+        .user-info {
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #1a1a1a;
+            border-radius: 6px;
+            border: 1px solid #2a2a2a;
+        }
+
+        .user-id {
+            font-size: 12px;
+            color: #7a7a7a;
+            word-break: break-all;
         }
 
         .rooms-header {
@@ -93,6 +130,7 @@
             border-bottom: 1px solid #252525;
             cursor: pointer;
             transition: background 0.2s;
+            position: relative;
         }
 
         .room-item:hover {
@@ -114,6 +152,12 @@
             justify-content: space-between;
             color: #7a7a7a;
             font-size: 12px;
+        }
+
+        .room-id {
+            font-size: 10px;
+            color: #5a5a5a;
+            margin-top: 2px;
         }
 
         .chat-container {
@@ -149,6 +193,41 @@
             background: #151515;
             display: flex;
             flex-direction: column;
+            gap: 15px;
+        }
+
+        .message {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .message.own {
+            align-items: flex-end;
+        }
+
+        .message-header {
+            font-size: 12px;
+            color: #7a7a7a;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .message.own .message-header {
+            flex-direction: row-reverse;
+        }
+
+        .message-content {
+            background: #2a2a2a;
+            padding: 10px 15px;
+            border-radius: 12px;
+            max-width: 70%;
+            word-wrap: break-word;
+        }
+
+        .message.own .message-content {
+            background: #0066cc;
         }
 
         .no-messages {
@@ -195,6 +274,11 @@
             background: #333;
         }
 
+        .send-button:disabled {
+            background: #1a1a1a;
+            cursor: not-allowed;
+        }
+
         .no-room-selected {
             display: flex;
             flex-direction: column;
@@ -217,7 +301,7 @@
             padding: 20px;
             border-radius: 6px;
             border: 1px solid #2a2a2a;
-            width: 300px;
+            width: 350px;
             position: absolute;
             top: 50%;
             left: 50%;
@@ -281,7 +365,40 @@
             display: none;
         }
 
-        /* Scrollbar styling */
+        .join-room-section {
+            margin-bottom: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #2a2a2a;
+        }
+
+        .join-room-label {
+            font-size: 14px;
+            margin-bottom: 10px;
+            color: #e0e0e0;
+        }
+
+        .tab-buttons {
+            display: flex;
+            margin-bottom: 20px;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .tab-button {
+            flex: 1;
+            padding: 8px;
+            background: #151515;
+            color: #7a7a7a;
+            border: none;
+            cursor: pointer;
+            font-size: 13px;
+        }
+
+        .tab-button.active {
+            background: #2a2a2a;
+            color: #e0e0e0;
+        }
+
         ::-webkit-scrollbar {
             width: 6px;
         }
@@ -295,7 +412,6 @@
             border-radius: 3px;
         }
 
-        /* Responsive styles */
         @media (max-width: 768px) {
             .main-content {
                 flex-direction: column;
@@ -307,40 +423,53 @@
                 border-bottom: 1px solid #2a2a2a;
                 max-height: 200px;
             }
+            
+            .message-content {
+                max-width: 85%;
+            }
         }
     </style>
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>Minimal P2P Chat</h1>
+            <h1>P2P Chat</h1>
+            <div class="connection-status">
+                <div class="status-dot" id="statusDot"></div>
+                <span id="statusText">Disconnected</span>
+            </div>
         </header>
         
         <div class="main-content">
             <div class="rooms-sidebar">
+                <div class="user-info">
+                    <div style="font-size: 12px; color: #e0e0e0; margin-bottom: 5px;">Your ID:</div>
+                    <div class="user-id" id="userId">Generating...</div>
+                </div>
+                
                 <div class="rooms-header">
                     <div class="rooms-title">Chat Rooms</div>
-                    <button class="create-room-btn" id="createRoomBtn">+ New Room</button>
+                    <button class="create-room-btn" id="createRoomBtn">+ New</button>
                 </div>
                 
                 <div class="rooms-list" id="roomsList">
-                    <!-- Room items will be added here dynamically -->
+                    <div style="color: #5a5a5a; text-align: center; padding: 20px;">No rooms yet</div>
                 </div>
             </div>
             
             <div class="chat-container">
                 <div class="chat-header">
-                    <div class="room-title">Select a room to start chatting</div>
-                    <div class="user-count">0 users</div>
+                    <div class="room-title" id="currentRoomTitle">Select a room to start chatting</div>
+                    <div class="user-count" id="userCount">0 users</div>
                 </div>
                 
                 <div class="messages-container" id="messagesContainer">
-                    <div class="no-messages">No messages yet. Start a conversation.</div>
+                    <div class="no-messages">Select a room to start chatting</div>
                 </div>
                 
                 <div class="input-container">
-                    <input type="text" class="message-input" placeholder="Type your message..." disabled>
-                    <button class="send-button" disabled>Send</button>
+                    <input type="text" class="message-input" id="messageInput" placeholder="Type your message..." disabled>
+                    <button class="send-button" id="sendButton" disabled>Send</button>
                 </div>
             </div>
         </div>
@@ -349,169 +478,406 @@
     <div class="overlay hidden" id="overlay"></div>
     
     <div class="room-form hidden" id="roomForm">
-        <div class="form-title">Create New Room</div>
-        <input type="text" class="form-input" placeholder="Room name" id="roomNameInput">
+        <div class="form-title">Room Options</div>
+        
+        <div class="tab-buttons">
+            <button class="tab-button active" id="createTab">Create Room</button>
+            <button class="tab-button" id="joinTab">Join Room</button>
+        </div>
+        
+        <div id="createSection">
+            <input type="text" class="form-input" placeholder="Room name" id="roomNameInput">
+        </div>
+        
+        <div id="joinSection" class="hidden">
+            <div class="join-room-label">Enter Room ID to join:</div>
+            <input type="text" class="form-input" placeholder="Room ID" id="roomIdInput">
+        </div>
+        
         <div class="form-buttons">
-            <button class="form-button secondary" id="cancelCreateRoom">Cancel</button>
-            <button class="form-button primary" id="confirmCreateRoom">Create</button>
+            <button class="form-button secondary" id="cancelRoom">Cancel</button>
+            <button class="form-button primary" id="confirmRoom">Create</button>
         </div>
     </div>
 
     <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            // DOM elements
-            const roomsList = document.getElementById('roomsList');
-            const createRoomBtn = document.getElementById('createRoomBtn');
-            const roomForm = document.getElementById('roomForm');
-            const overlay = document.getElementById('overlay');
-            const cancelCreateRoom = document.getElementById('cancelCreateRoom');
-            const confirmCreateRoom = document.getElementById('confirmCreateRoom');
-            const roomNameInput = document.getElementById('roomNameInput');
-            const messagesContainer = document.getElementById('messagesContainer');
-            const roomTitle = document.querySelector('.room-title');
-            const userCount = document.querySelector('.user-count');
-            const messageInput = document.querySelector('.message-input');
-            const sendButton = document.querySelector('.send-button');
-            
-            // State
-            let rooms = [];
-            let currentRoomId = null;
-            let messages = {};
-            
-            // Initialize with empty rooms list
-            updateRoomsList();
-            
-            // Create room button handler
-            createRoomBtn.addEventListener('click', () => {
-                roomForm.classList.remove('hidden');
-                overlay.classList.remove('hidden');
-                roomNameInput.value = '';
-                roomNameInput.focus();
-            });
-            
-            // Cancel create room
-            cancelCreateRoom.addEventListener('click', () => {
-                roomForm.classList.add('hidden');
-                overlay.classList.add('hidden');
-            });
-            
-            // Confirm create room
-            confirmCreateRoom.addEventListener('click', () => {
-                const roomName = roomNameInput.value.trim();
-                if (roomName) {
-                    createRoom(roomName);
-                    roomForm.classList.add('hidden');
-                    overlay.classList.add('hidden');
-                }
-            });
-            
-            // Create a new room
-            function createRoom(name) {
-                const newRoom = {
-                    id: Date.now(), // Simple ID generation
-                    name: name,
-                    users: 1,
-                    active: true
-                };
+        class P2PChat {
+            constructor() {
+                this.userId = this.generateUserId();
+                this.rooms = new Map();
+                this.currentRoomId = null;
+                this.connections = new Map();
+                this.isCreatingRoom = true;
                 
-                rooms.push(newRoom);
-                messages[newRoom.id] = [];
-                updateRoomsList();
-                selectRoom(newRoom.id);
+                // Simple signaling using BroadcastChannel for same-origin communication
+                this.signalingChannel = new BroadcastChannel('p2p-chat-signaling');
+                this.signalingChannel.addEventListener('message', this.handleSignalingMessage.bind(this));
+                
+                this.initializeUI();
+                this.updateConnectionStatus(false);
+                
+                // Announce our presence
+                this.broadcastSignal({
+                    type: 'user-online',
+                    userId: this.userId
+                });
             }
             
-            // Update rooms list UI
-            function updateRoomsList() {
+            generateUserId() {
+                return Math.random().toString(36).substr(2, 8) + Date.now().toString(36);
+            }
+            
+            initializeUI() {
+                // Update user ID in UI
+                document.getElementById('userId').textContent = this.userId;
+                
+                // Set up event listeners
+                document.getElementById('createRoomBtn').addEventListener('click', () => this.showRoomForm());
+                document.getElementById('cancelRoom').addEventListener('click', () => this.hideRoomForm());
+                document.getElementById('confirmRoom').addEventListener('click', () => this.handleRoomAction());
+                document.getElementById('createTab').addEventListener('click', () => this.switchTab(true));
+                document.getElementById('joinTab').addEventListener('click', () => this.switchTab(false));
+                document.getElementById('sendButton').addEventListener('click', () => this.sendMessage());
+                document.getElementById('messageInput').addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') this.sendMessage();
+                });
+                document.getElementById('overlay').addEventListener('click', () => this.hideRoomForm());
+            }
+            
+            showRoomForm() {
+                document.getElementById('roomForm').classList.remove('hidden');
+                document.getElementById('overlay').classList.remove('hidden');
+                this.switchTab(true);
+            }
+            
+            hideRoomForm() {
+                document.getElementById('roomForm').classList.add('hidden');
+                document.getElementById('overlay').classList.add('hidden');
+                document.getElementById('roomNameInput').value = '';
+                document.getElementById('roomIdInput').value = '';
+            }
+            
+            switchTab(isCreate) {
+                this.isCreatingRoom = isCreate;
+                const createTab = document.getElementById('createTab');
+                const joinTab = document.getElementById('joinTab');
+                const createSection = document.getElementById('createSection');
+                const joinSection = document.getElementById('joinSection');
+                const confirmButton = document.getElementById('confirmRoom');
+                
+                if (isCreate) {
+                    createTab.classList.add('active');
+                    joinTab.classList.remove('active');
+                    createSection.classList.remove('hidden');
+                    joinSection.classList.add('hidden');
+                    confirmButton.textContent = 'Create';
+                    document.getElementById('roomNameInput').focus();
+                } else {
+                    joinTab.classList.add('active');
+                    createTab.classList.remove('active');
+                    joinSection.classList.remove('hidden');
+                    createSection.classList.add('hidden');
+                    confirmButton.textContent = 'Join';
+                    document.getElementById('roomIdInput').focus();
+                }
+            }
+            
+            async handleRoomAction() {
+                if (this.isCreatingRoom) {
+                    const roomName = document.getElementById('roomNameInput').value.trim();
+                    if (roomName) {
+                        await this.createRoom(roomName);
+                    }
+                } else {
+                    const roomId = document.getElementById('roomIdInput').value.trim();
+                    if (roomId) {
+                        await this.joinRoom(roomId);
+                    }
+                }
+                this.hideRoomForm();
+            }
+            
+            async createRoom(name) {
+                const roomId = this.generateUserId();
+                const room = {
+                    id: roomId,
+                    name: name,
+                    creator: this.userId,
+                    users: [this.userId],
+                    messages: []
+                };
+                
+                this.rooms.set(roomId, room);
+                this.updateRoomsList();
+                this.selectRoom(roomId);
+                
+                // Broadcast room creation
+                this.broadcastSignal({
+                    type: 'room-created',
+                    room: {
+                        id: room.id,
+                        name: room.name,
+                        creator: room.creator
+                    },
+                    userId: this.userId
+                });
+            }
+            
+            async joinRoom(roomId) {
+                // Request to join room
+                this.broadcastSignal({
+                    type: 'join-room-request',
+                    roomId: roomId,
+                    userId: this.userId
+                });
+            }
+            
+            async handleSignalingMessage(event) {
+                const message = event.data;
+                
+                // Don't process our own messages
+                if (message.userId === this.userId) return;
+                
+                switch (message.type) {
+                    case 'user-online':
+                        this.updateConnectionStatus(true);
+                        // Share our rooms with the new user
+                        for (const [roomId, room] of this.rooms) {
+                            this.broadcastSignal({
+                                type: 'room-available',
+                                room: {
+                                    id: room.id,
+                                    name: room.name,
+                                    creator: room.creator,
+                                    userCount: room.users.length
+                                },
+                                userId: this.userId
+                            });
+                        }
+                        break;
+                        
+                    case 'room-created':
+                    case 'room-available':
+                        if (!this.rooms.has(message.room.id)) {
+                            const room = {
+                                id: message.room.id,
+                                name: message.room.name,
+                                creator: message.room.creator,
+                                users: [],
+                                messages: [],
+                                isExternal: true
+                            };
+                            this.rooms.set(message.room.id, room);
+                            this.updateRoomsList();
+                        }
+                        break;
+                        
+                    case 'join-room-request':
+                        const room = this.rooms.get(message.roomId);
+                        if (room && room.creator === this.userId) {
+                            // Add user to room
+                            if (!room.users.includes(message.userId)) {
+                                room.users.push(message.userId);
+                            }
+                            
+                            // Send room info to joining user
+                            this.broadcastSignal({
+                                type: 'room-joined',
+                                roomId: message.roomId,
+                                room: {
+                                    id: room.id,
+                                    name: room.name,
+                                    creator: room.creator,
+                                    messages: room.messages
+                                },
+                                userId: this.userId,
+                                targetUserId: message.userId
+                            });
+                            
+                            this.updateRoomsList();
+                        }
+                        break;
+                        
+                    case 'room-joined':
+                        if (message.targetUserId === this.userId) {
+                            const room = {
+                                id: message.room.id,
+                                name: message.room.name,
+                                creator: message.room.creator,
+                                users: [this.userId],
+                                messages: message.room.messages || [],
+                                isExternal: true
+                            };
+                            this.rooms.set(message.roomId, room);
+                            this.updateRoomsList();
+                            this.selectRoom(message.roomId);
+                        }
+                        break;
+                        
+                    case 'chat-message':
+                        const targetRoom = this.rooms.get(message.roomId);
+                        if (targetRoom) {
+                            const newMessage = {
+                                id: Date.now(),
+                                userId: message.senderId,
+                                username: message.senderId.substr(0, 8),
+                                text: message.text,
+                                timestamp: new Date()
+                            };
+                            targetRoom.messages.push(newMessage);
+                            
+                            if (this.currentRoomId === message.roomId) {
+                                this.renderMessages();
+                            }
+                        }
+                        break;
+                }
+            }
+            
+            broadcastSignal(message) {
+                this.signalingChannel.postMessage(message);
+            }
+            
+            updateConnectionStatus(connected) {
+                const statusDot = document.getElementById('statusDot');
+                const statusText = document.getElementById('statusText');
+                
+                if (connected) {
+                    statusDot.classList.add('connected');
+                    statusText.textContent = 'Connected';
+                } else {
+                    statusDot.classList.remove('connected');
+                    statusText.textContent = 'Offline Mode';
+                }
+            }
+            
+            updateRoomsList() {
+                const roomsList = document.getElementById('roomsList');
                 roomsList.innerHTML = '';
                 
-                if (rooms.length === 0) {
+                if (this.rooms.size === 0) {
                     roomsList.innerHTML = '<div style="color: #5a5a5a; text-align: center; padding: 20px;">No rooms yet</div>';
                     return;
                 }
                 
-                rooms.forEach(room => {
+                for (const [roomId, room] of this.rooms) {
                     const roomItem = document.createElement('div');
                     roomItem.className = 'room-item';
-                    roomItem.dataset.id = room.id;
-                    
-                    if (room.id === currentRoomId) {
+                    if (roomId === this.currentRoomId) {
                         roomItem.classList.add('active');
                     }
                     
+                    const userCount = room.users ? room.users.length : 1;
+                    const isOwner = room.creator === this.userId;
+                    
                     roomItem.innerHTML = `
-                        <div class="room-name">${room.name}</div>
+                        <div class="room-name">${room.name} ${isOwner ? '(Owner)' : ''}</div>
                         <div class="room-info">
-                            <span>${room.users} user${room.users !== 1 ? 's' : ''}</span>
-                            <span>${room.active ? 'Active' : 'Inactive'}</span>
+                            <span>${userCount} user${userCount !== 1 ? 's' : ''}</span>
+                            <span>Active</span>
                         </div>
+                        <div class="room-id">ID: ${roomId.substr(0, 8)}...</div>
                     `;
                     
-                    roomItem.addEventListener('click', () => {
-                        selectRoom(room.id);
-                    });
-                    
+                    roomItem.addEventListener('click', () => this.selectRoom(roomId));
                     roomsList.appendChild(roomItem);
-                });
-            }
-            
-            // Select a room
-            function selectRoom(roomId) {
-                currentRoomId = roomId;
-                const room = rooms.find(r => r.id === roomId);
-                
-                if (room) {
-                    roomTitle.textContent = room.name;
-                    userCount.textContent = `${room.users} user${room.users !== 1 ? 's' : ''}`;
-                    
-                    // Enable message input
-                    messageInput.disabled = false;
-                    sendButton.disabled = false;
-                    
-                    // Load messages
-                    loadMessages(roomId);
-                    
-                    // Update rooms list to reflect active room
-                    updateRoomsList();
                 }
             }
             
-            // Load messages for a room
-            function loadMessages(roomId) {
-                messagesContainer.innerHTML = '';
+            selectRoom(roomId) {
+                this.currentRoomId = roomId;
+                const room = this.rooms.get(roomId);
                 
-                if (!messages[roomId] || messages[roomId].length === 0) {
-                    messagesContainer.innerHTML = '<div class="no-messages">No messages yet. Start a conversation.</div>';
+                if (room) {
+                    document.getElementById('currentRoomTitle').textContent = room.name;
+                    const userCount = room.users ? room.users.length : 1;
+                    document.getElementById('userCount').textContent = `${userCount} user${userCount !== 1 ? 's' : ''}`;
+                    
+                    // Enable message input
+                    document.getElementById('messageInput').disabled = false;
+                    document.getElementById('sendButton').disabled = false;
+                    
+                    this.renderMessages();
+                    this.updateRoomsList();
+                }
+            }
+            
+            renderMessages() {
+                const container = document.getElementById('messagesContainer');
+                const room = this.rooms.get(this.currentRoomId);
+                
+                if (!room || room.messages.length === 0) {
+                    container.innerHTML = '<div class="no-messages">No messages yet. Start a conversation!</div>';
                     return;
                 }
                 
-                // In a real app, you would render actual messages here
-                messagesContainer.innerHTML = '<div class="no-messages">Messages will appear here when sent</div>';
-            }
-            
-            // Send message handler
-            sendButton.addEventListener('click', sendMessage);
-            messageInput.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') {
-                    sendMessage();
-                }
-            });
-            
-            function sendMessage() {
-                const text = messageInput.value.trim();
-                if (text && currentRoomId) {
-                    // In a real app, you would send the message via WebRTC
-                    console.log("Sending message:", text);
+                container.innerHTML = '';
+                
+                room.messages.forEach(message => {
+                    const messageEl = document.createElement('div');
+                    messageEl.className = 'message';
+                    if (message.userId === this.userId) {
+                        messageEl.classList.add('own');
+                    }
                     
-                    // Clear input
-                    messageInput.value = '';
-                }
+                    const time = new Date(message.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                    
+                    messageEl.innerHTML = `
+                        <div class="message-header">
+                            <span>${message.username}</span>
+                            <span>${time}</span>
+                        </div>
+                        <div class="message-content">${this.escapeHtml(message.text)}</div>
+                    `;
+                    
+                    container.appendChild(messageEl);
+                });
+                
+                container.scrollTop = container.scrollHeight;
             }
             
-            // Close overlay when clicking outside form
-            overlay.addEventListener('click', () => {
-                roomForm.classList.add('hidden');
-                overlay.classList.add('hidden');
-            });
+            sendMessage() {
+                const input = document.getElementById('messageInput');
+                const text = input.value.trim();
+                
+                if (!text || !this.currentRoomId) return;
+                
+                const room = this.rooms.get(this.currentRoomId);
+                if (!room) return;
+                
+                const message = {
+                    id: Date.now(),
+                    userId: this.userId,
+                    username: this.userId.substr(0, 8),
+                    text: text,
+                    timestamp: new Date()
+                };
+                
+                room.messages.push(message);
+                this.renderMessages();
+                
+                // Broadcast message
+                this.broadcastSignal({
+                    type: 'chat-message',
+                    roomId: this.currentRoomId,
+                    senderId: this.userId,
+                    text: text,
+                    timestamp: message.timestamp
+                });
+                
+                input.value = '';
+            }
+            
+            escapeHtml(text) {
+                const div = document.createElement('div');
+                div.textContent = text;
+                return div.innerHTML;
+            }
+        }
+        
+        // Initialize the chat application
+        document.addEventListener('DOMContentLoaded', () => {
+            new P2PChat();
         });
     </script>
 </body>
