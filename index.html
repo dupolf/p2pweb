@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>P2P Chat - WebRTC</title>
+    <title>Global P2P Chat</title>
     <style>
         * {
             margin: 0;
@@ -59,10 +59,18 @@
             height: 8px;
             border-radius: 50%;
             background: #ff4444;
+            animation: pulse 2s infinite;
         }
 
         .status-dot.connected {
             background: #44ff44;
+            animation: none;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
         }
 
         .main-content {
@@ -155,9 +163,10 @@
         }
 
         .room-id {
-            font-size: 10px;
-            color: #5a5a5a;
+            font-size: 14px;
+            color: #44ff44;
             margin-top: 2px;
+            font-weight: 600;
         }
 
         .chat-container {
@@ -230,6 +239,14 @@
             background: #0066cc;
         }
 
+        .system-message {
+            text-align: center;
+            color: #7a7a7a;
+            font-size: 12px;
+            font-style: italic;
+            margin: 10px 0;
+        }
+
         .no-messages {
             color: #5a5a5a;
             text-align: center;
@@ -270,30 +287,14 @@
             font-size: 14px;
         }
 
-        .send-button:hover {
+        .send-button:hover:not(:disabled) {
             background: #333;
         }
 
         .send-button:disabled {
             background: #1a1a1a;
             cursor: not-allowed;
-        }
-
-        .no-room-selected {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            flex: 1;
-            color: #5a5a5a;
-            text-align: center;
-            padding: 40px;
-        }
-
-        .no-room-icon {
-            font-size: 40px;
-            margin-bottom: 15px;
-            opacity: 0.3;
+            opacity: 0.5;
         }
 
         .room-form {
@@ -365,18 +366,6 @@
             display: none;
         }
 
-        .join-room-section {
-            margin-bottom: 15px;
-            padding-top: 15px;
-            border-top: 1px solid #2a2a2a;
-        }
-
-        .join-room-label {
-            font-size: 14px;
-            margin-bottom: 10px;
-            color: #e0e0e0;
-        }
-
         .tab-buttons {
             display: flex;
             margin-bottom: 20px;
@@ -397,6 +386,31 @@
         .tab-button.active {
             background: #2a2a2a;
             color: #e0e0e0;
+        }
+
+        .connection-info {
+            background: #1a1a1a;
+            border: 1px solid #2a2a2a;
+            border-radius: 6px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+
+        .connection-note {
+            font-size: 12px;
+            color: #7a7a7a;
+            text-align: center;
+            margin-bottom: 10px;
+        }
+
+        .server-status {
+            font-size: 11px;
+            color: #44ff44;
+            text-align: center;
+        }
+
+        .server-status.error {
+            color: #ff4444;
         }
 
         ::-webkit-scrollbar {
@@ -433,10 +447,10 @@
 <body>
     <div class="container">
         <header>
-            <h1>P2P Chat</h1>
+            <h1>Global P2P Chat</h1>
             <div class="connection-status">
                 <div class="status-dot" id="statusDot"></div>
-                <span id="statusText">Disconnected</span>
+                <span id="statusText">Connecting...</span>
             </div>
         </header>
         
@@ -447,13 +461,18 @@
                     <div class="user-id" id="userId">Generating...</div>
                 </div>
                 
+                <div class="connection-info">
+                    <div class="connection-note">Global WebSocket Connection</div>
+                    <div class="server-status" id="serverStatus">Connecting to server...</div>
+                </div>
+                
                 <div class="rooms-header">
                     <div class="rooms-title">Chat Rooms</div>
                     <button class="create-room-btn" id="createRoomBtn">+ New</button>
                 </div>
                 
                 <div class="rooms-list" id="roomsList">
-                    <div style="color: #5a5a5a; text-align: center; padding: 20px;">No rooms yet</div>
+                    <div style="color: #5a5a5a; text-align: center; padding: 20px;">Connecting...</div>
                 </div>
             </div>
             
@@ -490,8 +509,8 @@
         </div>
         
         <div id="joinSection" class="hidden">
-            <div class="join-room-label">Enter Room ID to join:</div>
-            <input type="text" class="form-input" placeholder="Room ID" id="roomIdInput">
+            <div style="font-size: 14px; margin-bottom: 10px; color: #e0e0e0;">Enter Room ID:</div>
+            <input type="text" class="form-input" placeholder="e.g. AB12" id="roomIdInput" style="text-transform: uppercase;">
         </div>
         
         <div class="form-buttons">
@@ -501,37 +520,276 @@
     </div>
 
     <script>
-        class P2PChat {
+        class GlobalP2PChat {
             constructor() {
                 this.userId = this.generateUserId();
+                this.username = this.userId.substring(0, 6);
                 this.rooms = new Map();
                 this.currentRoomId = null;
-                this.connections = new Map();
                 this.isCreatingRoom = true;
-                
-                // Simple signaling using BroadcastChannel for same-origin communication
-                this.signalingChannel = new BroadcastChannel('p2p-chat-signaling');
-                this.signalingChannel.addEventListener('message', this.handleSignalingMessage.bind(this));
+                this.socket = null;
+                this.isConnected = false;
+                this.reconnectAttempts = 0;
+                this.maxReconnectAttempts = 5;
                 
                 this.initializeUI();
-                this.updateConnectionStatus(false);
-                
-                // Announce our presence
-                this.broadcastSignal({
-                    type: 'user-online',
-                    userId: this.userId
-                });
+                this.connectToServer();
             }
             
             generateUserId() {
-                return Math.random().toString(36).substr(2, 8) + Date.now().toString(36);
+                const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+                let result = '';
+                for (let i = 0; i < 8; i++) {
+                    result += chars.charAt(Math.floor(Math.random() * chars.length));
+                }
+                return result;
+            }
+            
+            generateRoomId() {
+                const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+                let result = '';
+                for (let i = 0; i < 4; i++) {
+                    result += chars.charAt(Math.floor(Math.random() * chars.length));
+                }
+                return result;
+            }
+            
+            connectToServer() {
+                try {
+                    // Using a free public WebSocket echo service for demo
+                    // In production, you'd use your own WebSocket server
+                    this.socket = new WebSocket('wss://echo.websocket.org/');
+                    
+                    this.socket.onopen = () => {
+                        console.log('Connected to WebSocket server');
+                        this.isConnected = true;
+                        this.reconnectAttempts = 0;
+                        this.updateConnectionStatus();
+                        
+                        // Send join message
+                        this.sendToServer({
+                            type: 'user_join',
+                            userId: this.userId,
+                            username: this.username
+                        });
+                        
+                        // Request room list
+                        this.sendToServer({
+                            type: 'request_rooms',
+                            userId: this.userId
+                        });
+                    };
+                    
+                    this.socket.onmessage = (event) => {
+                        try {
+                            const data = JSON.parse(event.data);
+                            this.handleServerMessage(data);
+                        } catch (e) {
+                            console.warn('Failed to parse message:', event.data);
+                        }
+                    };
+                    
+                    this.socket.onclose = () => {
+                        console.log('WebSocket connection closed');
+                        this.isConnected = false;
+                        this.updateConnectionStatus();
+                        this.attemptReconnect();
+                    };
+                    
+                    this.socket.onerror = (error) => {
+                        console.error('WebSocket error:', error);
+                        this.isConnected = false;
+                        this.updateConnectionStatus();
+                    };
+                    
+                } catch (error) {
+                    console.error('Failed to connect:', error);
+                    this.updateConnectionStatus();
+                    this.attemptReconnect();
+                }
+            }
+            
+            attemptReconnect() {
+                if (this.reconnectAttempts < this.maxReconnectAttempts) {
+                    this.reconnectAttempts++;
+                    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 10000);
+                    
+                    document.getElementById('serverStatus').textContent = `Reconnecting in ${Math.ceil(delay/1000)}s... (${this.reconnectAttempts}/${this.maxReconnectAttempts})`;
+                    
+                    setTimeout(() => {
+                        this.connectToServer();
+                    }, delay);
+                } else {
+                    document.getElementById('serverStatus').textContent = 'Connection failed. Please refresh the page.';
+                    document.getElementById('serverStatus').classList.add('error');
+                }
+            }
+            
+            sendToServer(data) {
+                if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+                    // Add a unique message ID to distinguish our own messages
+                    data.messageId = `${this.userId}_${Date.now()}_${Math.random()}`;
+                    this.socket.send(JSON.stringify(data));
+                }
+            }
+            
+            handleServerMessage(data) {
+                // Since we're using an echo server, ignore our own messages
+                if (data.messageId && data.messageId.startsWith(this.userId + '_')) {
+                    return;
+                }
+                
+                switch (data.type) {
+                    case 'user_join':
+                        if (data.userId !== this.userId) {
+                            this.addSystemMessage('Global', `${data.username} joined the network`);
+                        }
+                        break;
+                        
+                    case 'room_created':
+                        if (data.userId !== this.userId) {
+                            this.addRoom(data.room);
+                        }
+                        break;
+                        
+                    case 'room_list':
+                        if (data.rooms && data.userId !== this.userId) {
+                            data.rooms.forEach(room => this.addRoom(room));
+                        }
+                        break;
+                        
+                    case 'join_room':
+                        if (data.roomId && this.rooms.has(data.roomId)) {
+                            const room = this.rooms.get(data.roomId);
+                            if (!room.users.has(data.userId)) {
+                                room.users.add(data.userId);
+                                this.updateRoomsList();
+                                if (this.currentRoomId === data.roomId) {
+                                    this.addSystemMessage(data.roomId, `${data.username} joined the room`);
+                                    this.updateUserCount();
+                                }
+                            }
+                        }
+                        break;
+                        
+                    case 'leave_room':
+                        if (data.roomId && this.rooms.has(data.roomId)) {
+                            const room = this.rooms.get(data.roomId);
+                            room.users.delete(data.userId);
+                            this.updateRoomsList();
+                            if (this.currentRoomId === data.roomId) {
+                                this.addSystemMessage(data.roomId, `${data.username} left the room`);
+                                this.updateUserCount();
+                            }
+                        }
+                        break;
+                        
+                    case 'chat_message':
+                        if (data.roomId && this.rooms.has(data.roomId)) {
+                            this.addMessage(data.roomId, data);
+                        }
+                        break;
+                        
+                    case 'request_rooms':
+                        // Send our rooms to the requester
+                        if (data.userId !== this.userId && this.rooms.size > 0) {
+                            this.sendToServer({
+                                type: 'room_list',
+                                userId: this.userId,
+                                rooms: Array.from(this.rooms.values()).map(room => ({
+                                    id: room.id,
+                                    name: room.name,
+                                    creator: room.creator,
+                                    userCount: room.users.size
+                                }))
+                            });
+                        }
+                        break;
+                }
+            }
+            
+            updateConnectionStatus() {
+                const statusDot = document.getElementById('statusDot');
+                const statusText = document.getElementById('statusText');
+                const serverStatus = document.getElementById('serverStatus');
+                
+                if (this.isConnected) {
+                    statusDot.classList.add('connected');
+                    statusText.textContent = 'Connected globally';
+                    serverStatus.textContent = 'Connected to global server';
+                    serverStatus.classList.remove('error');
+                } else {
+                    statusDot.classList.remove('connected');
+                    statusText.textContent = 'Disconnected';
+                    if (!serverStatus.classList.contains('error')) {
+                        serverStatus.textContent = 'Connecting...';
+                    }
+                }
+            }
+            
+            addRoom(roomData) {
+                if (!this.rooms.has(roomData.id)) {
+                    const room = {
+                        id: roomData.id,
+                        name: roomData.name,
+                        creator: roomData.creator,
+                        users: new Set(),
+                        messages: [],
+                        isOwner: roomData.creator === this.userId
+                    };
+                    this.rooms.set(roomData.id, room);
+                    this.updateRoomsList();
+                }
+            }
+            
+            addMessage(roomId, messageData) {
+                const room = this.rooms.get(roomId);
+                if (room) {
+                    const message = {
+                        id: messageData.messageId || Date.now(),
+                        userId: messageData.userId,
+                        username: messageData.username,
+                        text: messageData.text,
+                        timestamp: messageData.timestamp || Date.now()
+                    };
+                    
+                    room.messages.push(message);
+                    
+                    if (this.currentRoomId === roomId) {
+                        this.renderMessages();
+                    }
+                }
+            }
+            
+            addSystemMessage(roomId, text) {
+                if (roomId === 'Global') {
+                    // Global system message - could be displayed somewhere
+                    console.log('Global:', text);
+                    return;
+                }
+                
+                const room = this.rooms.get(roomId);
+                if (room) {
+                    const message = {
+                        id: Date.now(),
+                        userId: 'system',
+                        username: 'System',
+                        text: text,
+                        timestamp: Date.now(),
+                        isSystem: true
+                    };
+                    
+                    room.messages.push(message);
+                    
+                    if (this.currentRoomId === roomId) {
+                        this.renderMessages();
+                    }
+                }
             }
             
             initializeUI() {
-                // Update user ID in UI
                 document.getElementById('userId').textContent = this.userId;
                 
-                // Set up event listeners
                 document.getElementById('createRoomBtn').addEventListener('click', () => this.showRoomForm());
                 document.getElementById('cancelRoom').addEventListener('click', () => this.hideRoomForm());
                 document.getElementById('confirmRoom').addEventListener('click', () => this.handleRoomAction());
@@ -542,6 +800,10 @@
                     if (e.key === 'Enter') this.sendMessage();
                 });
                 document.getElementById('overlay').addEventListener('click', () => this.hideRoomForm());
+                
+                document.getElementById('roomIdInput').addEventListener('input', (e) => {
+                    e.target.value = e.target.value.toUpperCase();
+                });
             }
             
             showRoomForm() {
@@ -571,40 +833,46 @@
                     createSection.classList.remove('hidden');
                     joinSection.classList.add('hidden');
                     confirmButton.textContent = 'Create';
-                    document.getElementById('roomNameInput').focus();
+                    setTimeout(() => document.getElementById('roomNameInput').focus(), 100);
                 } else {
                     joinTab.classList.add('active');
                     createTab.classList.remove('active');
                     joinSection.classList.remove('hidden');
                     createSection.classList.add('hidden');
                     confirmButton.textContent = 'Join';
-                    document.getElementById('roomIdInput').focus();
+                    setTimeout(() => document.getElementById('roomIdInput').focus(), 100);
                 }
             }
             
-            async handleRoomAction() {
+            handleRoomAction() {
+                if (!this.isConnected) {
+                    alert('Please wait for connection to establish');
+                    return;
+                }
+                
                 if (this.isCreatingRoom) {
                     const roomName = document.getElementById('roomNameInput').value.trim();
                     if (roomName) {
-                        await this.createRoom(roomName);
+                        this.createRoom(roomName);
                     }
                 } else {
-                    const roomId = document.getElementById('roomIdInput').value.trim();
+                    const roomId = document.getElementById('roomIdInput').value.trim().toUpperCase();
                     if (roomId) {
-                        await this.joinRoom(roomId);
+                        this.joinRoom(roomId);
                     }
                 }
                 this.hideRoomForm();
             }
             
-            async createRoom(name) {
-                const roomId = this.generateUserId();
+            createRoom(name) {
+                const roomId = this.generateRoomId();
                 const room = {
                     id: roomId,
                     name: name,
                     creator: this.userId,
-                    users: [this.userId],
-                    messages: []
+                    users: new Set([this.userId]),
+                    messages: [],
+                    isOwner: true
                 };
                 
                 this.rooms.set(roomId, room);
@@ -612,142 +880,80 @@
                 this.selectRoom(roomId);
                 
                 // Broadcast room creation
-                this.broadcastSignal({
-                    type: 'room-created',
+                this.sendToServer({
+                    type: 'room_created',
+                    userId: this.userId,
+                    username: this.username,
                     room: {
-                        id: room.id,
-                        name: room.name,
-                        creator: room.creator
-                    },
-                    userId: this.userId
+                        id: roomId,
+                        name: name,
+                        creator: this.userId,
+                        userCount: 1
+                    }
                 });
             }
             
-            async joinRoom(roomId) {
-                // Request to join room
-                this.broadcastSignal({
-                    type: 'join-room-request',
-                    roomId: roomId,
-                    userId: this.userId
-                });
-            }
-            
-            async handleSignalingMessage(event) {
-                const message = event.data;
-                
-                // Don't process our own messages
-                if (message.userId === this.userId) return;
-                
-                switch (message.type) {
-                    case 'user-online':
-                        this.updateConnectionStatus(true);
-                        // Share our rooms with the new user
-                        for (const [roomId, room] of this.rooms) {
-                            this.broadcastSignal({
-                                type: 'room-available',
-                                room: {
-                                    id: room.id,
-                                    name: room.name,
-                                    creator: room.creator,
-                                    userCount: room.users.length
-                                },
-                                userId: this.userId
-                            });
-                        }
-                        break;
-                        
-                    case 'room-created':
-                    case 'room-available':
-                        if (!this.rooms.has(message.room.id)) {
-                            const room = {
-                                id: message.room.id,
-                                name: message.room.name,
-                                creator: message.room.creator,
-                                users: [],
-                                messages: [],
-                                isExternal: true
-                            };
-                            this.rooms.set(message.room.id, room);
-                            this.updateRoomsList();
-                        }
-                        break;
-                        
-                    case 'join-room-request':
-                        const room = this.rooms.get(message.roomId);
-                        if (room && room.creator === this.userId) {
-                            // Add user to room
-                            if (!room.users.includes(message.userId)) {
-                                room.users.push(message.userId);
-                            }
-                            
-                            // Send room info to joining user
-                            this.broadcastSignal({
-                                type: 'room-joined',
-                                roomId: message.roomId,
-                                room: {
-                                    id: room.id,
-                                    name: room.name,
-                                    creator: room.creator,
-                                    messages: room.messages
-                                },
-                                userId: this.userId,
-                                targetUserId: message.userId
-                            });
-                            
-                            this.updateRoomsList();
-                        }
-                        break;
-                        
-                    case 'room-joined':
-                        if (message.targetUserId === this.userId) {
-                            const room = {
-                                id: message.room.id,
-                                name: message.room.name,
-                                creator: message.room.creator,
-                                users: [this.userId],
-                                messages: message.room.messages || [],
-                                isExternal: true
-                            };
-                            this.rooms.set(message.roomId, room);
-                            this.updateRoomsList();
-                            this.selectRoom(message.roomId);
-                        }
-                        break;
-                        
-                    case 'chat-message':
-                        const targetRoom = this.rooms.get(message.roomId);
-                        if (targetRoom) {
-                            const newMessage = {
-                                id: Date.now(),
-                                userId: message.senderId,
-                                username: message.senderId.substr(0, 8),
-                                text: message.text,
-                                timestamp: new Date()
-                            };
-                            targetRoom.messages.push(newMessage);
-                            
-                            if (this.currentRoomId === message.roomId) {
-                                this.renderMessages();
-                            }
-                        }
-                        break;
+            joinRoom(roomId) {
+                if (this.rooms.has(roomId)) {
+                    this.selectRoom(roomId);
+                    
+                    // Broadcast join
+                    this.sendToServer({
+                        type: 'join_room',
+                        roomId: roomId,
+                        userId: this.userId,
+                        username: this.username
+                    });
+                } else {
+                    alert(`Room ${roomId} not found. Make sure the room ID is correct and the room creator is online.`);
                 }
             }
             
-            broadcastSignal(message) {
-                this.signalingChannel.postMessage(message);
+            selectRoom(roomId) {
+                // Leave previous room
+                if (this.currentRoomId && this.currentRoomId !== roomId) {
+                    this.sendToServer({
+                        type: 'leave_room',
+                        roomId: this.currentRoomId,
+                        userId: this.userId,
+                        username: this.username
+                    });
+                }
+                
+                this.currentRoomId = roomId;
+                const room = this.rooms.get(roomId);
+                
+                if (room) {
+                    room.users.add(this.userId);
+                    
+                    document.getElementById('currentRoomTitle').textContent = room.name;
+                    this.updateUserCount();
+                    
+                    document.getElementById('messageInput').disabled = false;
+                    document.getElementById('sendButton').disabled = false;
+                    
+                    this.renderMessages();
+                    this.updateRoomsList();
+                    
+                    // Announce join if not owner
+                    if (!room.isOwner) {
+                        this.sendToServer({
+                            type: 'join_room',
+                            roomId: roomId,
+                            userId: this.userId,
+                            username: this.username
+                        });
+                    }
+                }
             }
             
-            updateConnectionStatus(connected) {
-                const statusDot = document.getElementById('statusDot');
-                const statusText = document.getElementById('statusText');
-                
-                if (connected) {
-                    statusDot.classList.add('connected');
-                    statusText.textContent = 'Connected';
-                } else {
-                    statusDot.classList.remove('connected');
-                    statusText.textContent = 'Offline Mode';
+            updateUserCount() {
+                if (this.currentRoomId) {
+                    const room = this.rooms.get(this.currentRoomId);
+                    if (room) {
+                        const userCount = room.users.size;
+                        document.getElementById('userCount').textContent = `${userCount} user${userCount !== 1 ? 's' : ''}`;
+                    }
                 }
             }
             
@@ -756,7 +962,7 @@
                 roomsList.innerHTML = '';
                 
                 if (this.rooms.size === 0) {
-                    roomsList.innerHTML = '<div style="color: #5a5a5a; text-align: center; padding: 20px;">No rooms yet</div>';
+                    roomsList.innerHTML = '<div style="color: #5a5a5a; text-align: center; padding: 20px;">No rooms available</div>';
                     return;
                 }
                 
@@ -767,38 +973,20 @@
                         roomItem.classList.add('active');
                     }
                     
-                    const userCount = room.users ? room.users.length : 1;
+                    const userCount = room.users.size;
                     const isOwner = room.creator === this.userId;
                     
                     roomItem.innerHTML = `
-                        <div class="room-name">${room.name} ${isOwner ? '(Owner)' : ''}</div>
+                        <div class="room-name">${room.name} ${isOwner ? '(Host)' : ''}</div>
                         <div class="room-info">
                             <span>${userCount} user${userCount !== 1 ? 's' : ''}</span>
-                            <span>Active</span>
+                            <span>Online</span>
                         </div>
-                        <div class="room-id">ID: ${roomId}</div>
+                        <div class="room-id">${roomId}</div>
                     `;
                     
                     roomItem.addEventListener('click', () => this.selectRoom(roomId));
                     roomsList.appendChild(roomItem);
-                }
-            }
-            
-            selectRoom(roomId) {
-                this.currentRoomId = roomId;
-                const room = this.rooms.get(roomId);
-                
-                if (room) {
-                    document.getElementById('currentRoomTitle').textContent = room.name;
-                    const userCount = room.users ? room.users.length : 1;
-                    document.getElementById('userCount').textContent = `${userCount} user${userCount !== 1 ? 's' : ''}`;
-                    
-                    // Enable message input
-                    document.getElementById('messageInput').disabled = false;
-                    document.getElementById('sendButton').disabled = false;
-                    
-                    this.renderMessages();
-                    this.updateRoomsList();
                 }
             }
             
@@ -807,30 +995,37 @@
                 const room = this.rooms.get(this.currentRoomId);
                 
                 if (!room || room.messages.length === 0) {
-                    container.innerHTML = '<div class="no-messages">No messages yet. Start a conversation!</div>';
+                    container.innerHTML = '<div class="no-messages">No messages yet. Start the conversation!</div>';
                     return;
                 }
                 
                 container.innerHTML = '';
                 
                 room.messages.forEach(message => {
-                    const messageEl = document.createElement('div');
-                    messageEl.className = 'message';
-                    if (message.userId === this.userId) {
-                        messageEl.classList.add('own');
+                    if (message.isSystem) {
+                        const systemEl = document.createElement('div');
+                        systemEl.className = 'system-message';
+                        systemEl.textContent = message.text;
+                        container.appendChild(systemEl);
+                    } else {
+                        const messageEl = document.createElement('div');
+                        messageEl.className = 'message';
+                        if (message.userId === this.userId) {
+                            messageEl.classList.add('own');
+                        }
+                        
+                        const time = new Date(message.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                        
+                        messageEl.innerHTML = `
+                            <div class="message-header">
+                                <span>${message.username}</span>
+                                <span>${time}</span>
+                            </div>
+                            <div class="message-content">${this.escapeHtml(message.text)}</div>
+                        `;
+                        
+                        container.appendChild(messageEl);
                     }
-                    
-                    const time = new Date(message.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-                    
-                    messageEl.innerHTML = `
-                        <div class="message-header">
-                            <span>${message.username}</span>
-                            <span>${time}</span>
-                        </div>
-                        <div class="message-content">${this.escapeHtml(message.text)}</div>
-                    `;
-                    
-                    container.appendChild(messageEl);
                 });
                 
                 container.scrollTop = container.scrollHeight;
@@ -840,30 +1035,22 @@
                 const input = document.getElementById('messageInput');
                 const text = input.value.trim();
                 
-                if (!text || !this.currentRoomId) return;
+                if (!text || !this.currentRoomId || !this.isConnected) return;
                 
-                const room = this.rooms.get(this.currentRoomId);
-                if (!room) return;
-                
-                const message = {
-                    id: Date.now(),
+                const messageData = {
+                    type: 'chat_message',
+                    roomId: this.currentRoomId,
                     userId: this.userId,
-                    username: this.userId.substr(0, 8),
+                    username: this.username,
                     text: text,
-                    timestamp: new Date()
+                    timestamp: Date.now()
                 };
                 
-                room.messages.push(message);
-                this.renderMessages();
+                // Add to local messages immediately
+                this.addMessage(this.currentRoomId, messageData);
                 
-                // Broadcast message
-                this.broadcastSignal({
-                    type: 'chat-message',
-                    roomId: this.currentRoomId,
-                    senderId: this.userId,
-                    text: text,
-                    timestamp: message.timestamp
-                });
+                // Send to server
+                this.sendToServer(messageData);
                 
                 input.value = '';
             }
@@ -877,7 +1064,7 @@
         
         // Initialize the chat application
         document.addEventListener('DOMContentLoaded', () => {
-            new P2PChat();
+            new GlobalP2PChat();
         });
     </script>
 </body>
